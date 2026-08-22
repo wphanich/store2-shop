@@ -295,6 +295,14 @@ header{
 .admin-announce-row .thumb img{width:100%;height:100%;object-fit:cover}
 .admin-announce-row .info{flex:1;min-width:0}
 .admin-announce-row .actions{display:flex;gap:8px;flex-shrink:0}
+.import-row{
+  display:flex;gap:12px;align-items:center;background:#fff;border:1px solid var(--line);
+  border-radius:10px;padding:10px 14px;margin-bottom:8px;
+}
+.import-row .thumb{width:44px;height:52px;border-radius:6px;overflow:hidden;background:#ECECE7;flex-shrink:0}
+.import-row .thumb img{width:100%;height:100%;object-fit:cover}
+.import-row input[type="checkbox"]{width:auto;flex-shrink:0}
+.import-row .info{flex:1;min-width:0;font-size:13.5px}
 .order-top{display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px;margin-bottom:8px}
 .order-id{font-family:'Prompt';font-weight:600;font-size:14px}
 .status{
@@ -577,9 +585,19 @@ header{
         <button class="mini-btn danger" onclick="removeSizeChart()">ลบรูปออก</button>
       </div>
     </div>
-    <div id="adminAnnouncements" style="display:none">
+        <div id="adminAnnouncements" style="display:none">
       <button class="add-btn" style="margin-bottom:14px" onclick="openAnnouncementForm()">+ เพิ่มประกาศ</button>
       <div id="adminAnnouncementList"></div>
+    </div>
+    <div id="adminImport" style="display:none">
+      <div class="hint" style="margin-bottom:14px">
+        ดึงรายการสินค้าจากร้านแรก (อ่านอย่างเดียว ไม่กระทบร้านแรก) เลือกสินค้าที่ต้องการแล้วนำเข้าเป็นสินค้าใหม่ในร้านนี้
+      </div>
+      <button class="add-btn" onclick="loadStore1Products()" id="loadStore1Btn">โหลดรายการสินค้าจากร้านแรก</button>
+      <label style="display:flex;align-items:center;gap:8px;margin-top:14px;font-weight:600">
+        <input type="checkbox" id="importResetStock" style="width:auto"> รีเซ็ตสต๊อกเป็น 0 (แทนที่จะคัดลอกจำนวนเดิมมาด้วย)
+      </label>
+      <div id="importProductList" style="margin-top:14px"></div>
     </div>
   </div>
 </div>
@@ -838,6 +856,18 @@ const BANK_INFO = {
 /* คีย์ฟรีจาก imgbb.com (สมัครฟรีด้วยอีเมล ไม่ต้องผูกบัตร) ใช้สำหรับอัปโหลดรูปสินค้า
    สมัครได้ที่ https://api.imgbb.com/ แล้วแทนที่ค่านี้ */
 const IMGBB_API_KEY = "177ab8734a3c8cc87d13b18f266c337c";
+
+const STORE1_CONFIG = {
+  apiKey: "AIzaSyBagykPem34jEqlDNEfuEv9-oJMlFkxS_o",
+  authDomain: "tshite-51981.firebaseapp.com",
+  projectId: "tshite-51981",
+  storageBucket: "tshite-51981.firebasestorage.app",
+  messagingSenderId: "556297532710",
+  appId: "1:556297532710:web:036d6506f000cee6b83de7",
+  measurementId: "G-8HHG7H5D6Z"
+};
+const store1App = firebase.initializeApp(STORE1_CONFIG, 'store1');
+const store1Db  = store1App.firestore();
 
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
@@ -1543,11 +1573,13 @@ function adminTab(t){
   el('tabCustomers').classList.toggle('active', t==='customers');
   el('tabSizeChart').classList.toggle('active', t==='sizechart');
   el('tabAnnouncements').classList.toggle('active', t==='announcements');
+  el('tabImport').classList.toggle('active', t==='import');
   el('adminProducts').style.display = t==='products' ? '' : 'none';
   el('adminOrders').style.display = t==='orders' ? '' : 'none';
   el('adminCustomers').style.display = t==='customers' ? '' : 'none';
   el('adminSizeChart').style.display = t==='sizechart' ? '' : 'none';
   el('adminAnnouncements').style.display = t==='announcements' ? '' : 'none';
+  el('adminImport').style.display = t==='import' ? '' : 'none';
   if (t==='customers') renderCustomers();
   if (t==='sizechart') loadSizeChartIntoForm();
 }
@@ -2076,6 +2108,71 @@ async function deleteAnnouncement(id){
     await db.collection('announcements').doc(id).delete();
     toast('ลบประกาศแล้ว');
   }catch(err){ toast('ลบไม่สำเร็จ: ' + err.message); }
+}
+
+let store1Products = [];
+
+async function loadStore1Products(){
+  const btn = el('loadStore1Btn');
+  btn.disabled = true; btn.textContent = 'กำลังโหลด...';
+  try{
+    const snap = await store1Db.collection('products').get();
+    store1Products = snap.docs.map(d => ({id: d.id, ...d.data()}));
+    renderImportProductList();
+    toast(`โหลดสินค้าจากร้านแรกได้ ${store1Products.length} รายการ`);
+  }catch(err){
+    toast('โหลดไม่สำเร็จ: ' + err.message);
+  }finally{
+    btn.disabled = false; btn.textContent = 'โหลดรายการสินค้าจากร้านแรก';
+  }
+}
+
+function renderImportProductList(){
+  if (!store1Products.length){
+    el('importProductList').innerHTML = `<div class="empty"><div class="big">📦</div>ไม่พบสินค้าในร้านแรก หรือยังไม่ได้กดโหลด</div>`;
+    return;
+  }
+  el('importProductList').innerHTML = `
+    <div style="margin-bottom:10px">
+      <button class="mini-btn" onclick="toggleAllImport(true)">เลือกทั้งหมด</button>
+      <button class="mini-btn" onclick="toggleAllImport(false)">ไม่เลือกเลย</button>
+      <button class="add-btn" style="margin-left:8px" onclick="importSelectedProducts()">นำเข้าสินค้าที่เลือก</button>
+    </div>
+    ${store1Products.map(p => `
+      <div class="import-row">
+        <input type="checkbox" class="import-check" value="${p.id}" checked>
+        <div class="thumb">${p.image ? `<img src="${p.image}">` : '👕'}</div>
+        <div class="info"><b>${p.name}</b><br><span class="hint">${p.category||'-'} · ${fmt(p.price)} · สต๊อกเดิม ${p.stock||0}</span></div>
+      </div>`).join('')}
+  `;
+}
+
+function toggleAllImport(checked){
+  document.querySelectorAll('.import-check').forEach(cb => cb.checked = checked);
+}
+
+async function importSelectedProducts(){
+  const checked = [...document.querySelectorAll('.import-check:checked')].map(cb => cb.value);
+  if (!checked.length){ toast('ยังไม่ได้เลือกสินค้าที่จะนำเข้า'); return; }
+  const resetStock = el('importResetStock').checked;
+  if (!confirm(`นำเข้าสินค้า ${checked.length} รายการเข้าร้านนี้?`)) return;
+
+  let ok = 0, fail = 0;
+  for (const pid of checked){
+    const p = store1Products.find(x => x.id === pid);
+    if (!p) continue;
+    try{
+      const { id, ...data } = p;
+      await db.collection('products').add({
+        ...data,
+        stock: resetStock ? 0 : (data.stock || 0),
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      ok++;
+    }catch(err){ fail++; console.error(err); }
+  }
+  toast(`นำเข้าสำเร็จ ${ok} รายการ${fail ? ` (พลาด ${fail} รายการ)` : ''}`);
 }
 
 function getFilteredAdminOrders(){
