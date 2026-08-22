@@ -810,32 +810,33 @@ header{
       (Firebase Console → Project settings → Your apps → Web app)
    ============================================================ */
 const firebaseConfig = {
-  apiKey: "STORE2_API_KEY",
-  authDomain: "STORE2_PROJECT.firebaseapp.com",
-  projectId: "STORE2_PROJECT_ID",
-  storageBucket: "STORE2_PROJECT.firebasestorage.app",
-  messagingSenderId: "STORE2_SENDER_ID",
-  appId: "STORE2_APP_ID"
+  apiKey: "AIzaSyBDcB0nORniOaMOd4MELPUr0XewJmBuo3Q",
+  authDomain: "store-8205e.firebaseapp.com",
+  projectId: "store-8205e",
+  storageBucket: "store-8205e.firebasestorage.app",
+  messagingSenderId: "244729062251",
+  appId: "1:244729062251:web:e35407bba4b101f264e22e",
+  measurementId: "G-GW06MLC7P5"
 };
 
 /* เบอร์ผู้ดูแลร้าน (รูปแบบ +66) — ล็อกอินด้วยเบอร์นี้จะเห็นเมนู "จัดการร้าน" */
-const ADMIN_PHONES = ["+66863540995"];
+const ADMIN_PHONES = ["+6686350995"];
 
 /* เบอร์โทรติดต่อร้าน แสดงให้ลูกค้าเห็นเพื่อสอบถาม/ติดตามสถานะสินค้า — แก้เป็นเบอร์จริงของร้าน */
-const SHOP_PHONE = "0812345678";
+const SHOP_PHONE = "0635919009";
 
 /* ข้อมูลบัญชีธนาคาร/PromptPay สำหรับให้ลูกค้าโอนเงิน — แก้เป็นข้อมูลจริงของร้าน
    promptpayId ใส่ได้ทั้งเบอร์มือถือ (เช่น 0812345678) หรือเลขผู้เสียภาษี 13 หลัก */
 const BANK_INFO = {
-  bankName: "STORE2_BANK_NAME",
-  accountNumber: "STORE2_ACCOUNT_NUMBER",
-  accountName: "STORE2_ACCOUNT_NAME",
-  promptpayId: "STORE2_PROMPTPAY_ID"
+  bankName: "ธนาคารกรุงไทย",
+  accountNumber: "1841040053",
+  accountName: "นางสาวสุภัทรา จงจิระ",
+  promptpayId: "3230400248908"
 };
 
 /* คีย์ฟรีจาก imgbb.com (สมัครฟรีด้วยอีเมล ไม่ต้องผูกบัตร) ใช้สำหรับอัปโหลดรูปสินค้า
    สมัครได้ที่ https://api.imgbb.com/ แล้วแทนที่ค่านี้ */
-const IMGBB_API_KEY = "YOUR_IMGBB_API_KEY";
+const IMGBB_API_KEY = "177ab8734a3c8cc87d13b18f266c337c";
 
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
