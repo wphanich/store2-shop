@@ -115,9 +115,14 @@ header{
   font-family:'Prompt';font-weight:600;font-size:14.5px;
   display:flex;align-items:center;gap:10px;margin-bottom:12px;
 }
-.size-chart-card img{
-  display:block;max-width:100%;max-height:420px;margin:0 auto;
-  border-radius:10px;cursor:zoom-in;
+.size-chart-viewport{
+  position:relative;overflow:hidden;border-radius:10px;background:var(--bg);height:420px;
+}
+.size-chart-viewport .img-track{display:flex;width:100%;height:100%;transition:transform .3s ease}
+.size-chart-viewport .img-slide{flex:0 0 100%;width:100%;height:100%;display:flex;align-items:center;justify-content:center}
+.size-chart-viewport .img-slide img{max-width:100%;max-height:100%;width:auto;height:auto;object-fit:contain;cursor:zoom-in}
+@media (max-width:640px){
+  .size-chart-viewport{height:300px}
 }
 .float-call{
   position:fixed;right:20px;bottom:20px;z-index:80;
@@ -438,10 +443,10 @@ header{
       <a class="hero-contact" id="heroContactLink" href="#">📞 สอบถาม/ติดตามสินค้า: <span id="heroContactNumber"></span></a>
     </div>
   </div>
-  <div class="wrap" style="padding-bottom:0">
+    <div class="wrap" style="padding-bottom:0">
     <div class="size-chart-card" id="sizeChartCard" style="display:none">
-      <div class="size-chart-head">📏 ตารางเทียบขนาดไซส์ <span class="hint">แตะรูปเพื่อดูภาพขยาย</span></div>
-      <img id="sizeChartImg" src="" alt="ตารางเทียบขนาดไซส์" onclick="window.open(this.src,'_blank')">
+      <div class="size-chart-head">📏 ตารางเทียบขนาดไซส์ <span class="hint">แตะรูปเพื่อดูภาพขยาย · เลื่อนดูได้หลายรูป</span></div>
+      <div class="size-chart-viewport" id="sizeChartViewport" ontouchstart="onSizeChartTouchStart(event)" ontouchend="onSizeChartTouchEnd(event)"></div>
     </div>
   </div>
   <div class="wrap">
@@ -562,9 +567,9 @@ header{
         </table>
       </div>
     </div>
-    <div id="adminSizeChart" style="display:none">
+        <div id="adminSizeChart" style="display:none">
       <div class="hint" style="margin-bottom:14px">
-        อัปโหลดรูปตารางเทียบขนาดไซส์ (เช่น สัดส่วนอก/เอว/สะโพก ของแต่ละไซซ์) จะแสดงให้ลูกค้าเห็นที่หน้าแรกของร้าน ใต้แบนเนอร์หลัก
+        อัปโหลดรูปตารางเทียบขนาดไซส์ได้หลายรูป (เช่น ตารางเสื้อผู้ชาย/ผู้หญิงแยกกัน) ลูกค้าจะเลื่อนดูได้ที่หน้าแรกของร้าน ใต้แบนเนอร์หลัก
       </div>
       <label>รูปตารางไซส์</label>
       <div class="upload-box">
@@ -574,15 +579,18 @@ header{
           <div class="upload-status" id="scUploadStatus">รองรับ JPG/PNG ไม่เกิน 5MB</div>
           <div class="progress-track" id="scProgressTrack" style="display:none"><div class="progress-fill" id="scProgressFill"></div></div>
         </div>
-        <button type="button" class="upload-pick-btn" onclick="document.getElementById('scFile').click()">เลือกรูป</button>
+        <button type="button" class="upload-pick-btn" onclick="document.getElementById('scFile').click()">เพิ่มรูป</button>
         <input type="file" id="scFile" accept="image/png,image/jpeg,image/webp" style="display:none" onchange="onPickSizeChartImage(event)">
       </div>
       <div class="or-divider">หรือ</div>
-      <label>ลิงก์รูปภาพ (URL)</label>
-      <input type="url" id="scImageUrl" placeholder="https://...jpg" oninput="onManualSizeChartUrl()">
+      <div style="display:flex;gap:8px">
+        <input type="url" id="scImageUrlInput" placeholder="https://...jpg" style="flex:1">
+        <button type="button" class="mini-btn" onclick="addManualSizeChartImageUrl()">เพิ่มลิงก์</button>
+      </div>
+      <div class="image-list" id="scImageList"></div>
       <div style="display:flex;gap:10px;margin-top:18px">
         <button class="big-btn indigo" style="flex:1" onclick="saveSizeChart()">บันทึกตารางไซส์</button>
-        <button class="mini-btn danger" onclick="removeSizeChart()">ลบรูปออก</button>
+        <button class="mini-btn danger" onclick="removeSizeChart()">ลบรูปทั้งหมด</button>
       </div>
     </div>
         <div id="adminAnnouncements" style="display:none">
@@ -1179,20 +1187,57 @@ store1Db.collection('products').onSnapshot(snap => {
 /* ============================================================
    5.5) ตารางไซส์ (collection: settings, doc: shop) — realtime, อ่านได้ทุกคน
    ============================================================ */
-let sizeChartImage = null;
+let sizeChartImages = [];
+let sizeChartImageIndex = 0;
 db.collection('settings').doc('shop').onSnapshot(snap => {
-  sizeChartImage = snap.exists ? (snap.data().sizeChartImage || null) : null;
+  const data = snap.exists ? snap.data() : {};
+  sizeChartImages = (data.sizeChartImages && data.sizeChartImages.length)
+    ? data.sizeChartImages
+    : (data.sizeChartImage ? [data.sizeChartImage] : []);
+  sizeChartImageIndex = 0;
   renderSizeChartOnHomepage();
 }, err => console.error(err));
 
 function renderSizeChartOnHomepage(){
   const card = el('sizeChartCard');
-  if (sizeChartImage){
-    el('sizeChartImg').src = sizeChartImage;
-    card.style.display = '';
-  }else{
+  const viewport = el('sizeChartViewport');
+  if (!sizeChartImages.length){
     card.style.display = 'none';
+    return;
   }
+  card.style.display = '';
+  viewport.innerHTML = `
+    <div class="img-track" id="sizeChartTrack">
+      ${sizeChartImages.map(url=>`<div class="img-slide"><img src="${url}" alt="ตารางเทียบขนาดไซส์" onclick="window.open('${url}','_blank')"></div>`).join('')}
+    </div>
+    ${sizeChartImages.length>1 ? `
+      <button type="button" class="img-nav prev" onclick="slideSizeChartImage(-1)">‹</button>
+      <button type="button" class="img-nav next" onclick="slideSizeChartImage(1)">›</button>
+      <div class="img-dots">${sizeChartImages.map((_,i)=>`<button type="button" class="dot dot-sizechart ${i===0?'active':''}" onclick="goToSizeChartImage(${i})"></button>`).join('')}</div>
+    ` : ''}
+  `;
+}
+function applySizeChartImageIndex(idx){
+  const track = el('sizeChartTrack');
+  if (track) track.style.transform = `translateX(-${idx*100}%)`;
+  document.querySelectorAll('.dot-sizechart').forEach((d,i)=>d.classList.toggle('active', i===idx));
+}
+function slideSizeChartImage(dir){
+  if (sizeChartImages.length < 2) return;
+  sizeChartImageIndex = (sizeChartImageIndex + dir + sizeChartImages.length) % sizeChartImages.length;
+  applySizeChartImageIndex(sizeChartImageIndex);
+}
+function goToSizeChartImage(idx){
+  sizeChartImageIndex = idx;
+  applySizeChartImageIndex(idx);
+}
+let sizeChartSwipeStartX = null;
+function onSizeChartTouchStart(e){ sizeChartSwipeStartX = e.changedTouches[0].clientX; }
+function onSizeChartTouchEnd(e){
+  if (sizeChartSwipeStartX === null) return;
+  const dx = e.changedTouches[0].clientX - sizeChartSwipeStartX;
+  if (Math.abs(dx) > 40) slideSizeChartImage(dx < 0 ? 1 : -1);
+  sizeChartSwipeStartX = null;
 }
 
 /* ============================================================
@@ -1940,10 +1985,12 @@ function exportCustomersToExcel(){
    9.5) จัดการตารางไซส์ (แอดมิน)
    ============================================================ */
 let isUploadingSizeChart = false;
+let currentSizeChartImages = [];
 
 function loadSizeChartIntoForm(){
-  el('scImageUrl').value = sizeChartImage || '';
-  updateSizeChartPreview(sizeChartImage || '');
+  currentSizeChartImages = sizeChartImages.slice();
+  renderSizeChartImageList();
+  el('scImageUrlInput').value = '';
   el('scFile').value = '';
   isUploadingSizeChart = false;
   el('scProgressTrack').style.display = 'none';
@@ -1952,12 +1999,25 @@ function loadSizeChartIntoForm(){
   el('scUploadStatus').textContent = 'รองรับ JPG/PNG ไม่เกิน 5MB';
 }
 
-function updateSizeChartPreview(url){
-  el('scPreview').innerHTML = url ? `<img src="${url}" onerror="this.parentNode.innerHTML='📏'">` : '📏';
+function renderSizeChartImageList(){
+  el('scPreview').innerHTML = currentSizeChartImages.length
+    ? `<img src="${currentSizeChartImages[0]}" onerror="this.parentNode.innerHTML='📏'">` : '📏';
+  el('scImageList').innerHTML = currentSizeChartImages.map((url, i) => `
+    <div class="img-item">
+      <img src="${url}" onerror="this.style.opacity=0.3">
+      <button type="button" class="rm-btn" onclick="removeSizeChartImageAt(${i})">×</button>
+    </div>`).join('');
 }
-
-function onManualSizeChartUrl(){
-  updateSizeChartPreview(el('scImageUrl').value.trim());
+function removeSizeChartImageAt(i){
+  currentSizeChartImages.splice(i,1);
+  renderSizeChartImageList();
+}
+function addManualSizeChartImageUrl(){
+  const url = el('scImageUrlInput').value.trim();
+  if (!url) return;
+  currentSizeChartImages.push(url);
+  el('scImageUrlInput').value = '';
+  renderSizeChartImageList();
 }
 
 async function onPickSizeChartImage(event){
@@ -1970,7 +2030,6 @@ async function onPickSizeChartImage(event){
     toast('ขนาดไฟล์ต้องไม่เกิน 5MB'); event.target.value=''; return;
   }
   el('scFilename').textContent = file.name;
-  updateSizeChartPreview(URL.createObjectURL(file));
   el('scProgressTrack').style.display = '';
   el('scProgressFill').style.width = '0%';
   const statusEl = el('scUploadStatus');
@@ -1983,10 +2042,11 @@ async function onPickSizeChartImage(event){
       el('scProgressFill').style.width = pct + '%';
       statusEl.textContent = `กำลังอัปโหลด... ${pct}%`;
     });
-    el('scImageUrl').value = url;
-    updateSizeChartPreview(url);
+    currentSizeChartImages.push(url);
+    renderSizeChartImageList();
     statusEl.className = 'upload-status ok';
-    statusEl.textContent = 'อัปโหลดสำเร็จ — กด "บันทึกตารางไซส์" เพื่อเผยแพร่';
+    statusEl.textContent = 'อัปโหลดสำเร็จ';
+    event.target.value = '';
   }catch(err){
     statusEl.className = 'upload-status err';
     statusEl.textContent = 'อัปโหลดไม่สำเร็จ: ' + err.message;
@@ -1998,11 +2058,11 @@ async function onPickSizeChartImage(event){
 
 async function saveSizeChart(){
   if (isUploadingSizeChart){ toast('กรุณารอให้อัปโหลดรูปเสร็จก่อน'); return; }
-  const url = el('scImageUrl').value.trim();
-  if (!url){ toast('กรุณาเลือกหรือใส่ลิงก์รูปตารางไซส์ก่อน'); return; }
+  if (!currentSizeChartImages.length){ toast('กรุณาเพิ่มรูปตารางไซส์อย่างน้อย 1 รูปก่อน'); return; }
   try{
     await db.collection('settings').doc('shop').set({
-      sizeChartImage: url,
+      sizeChartImages: currentSizeChartImages,
+      sizeChartImage: firebase.firestore.FieldValue.delete(),
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     }, {merge:true});
     toast('บันทึกตารางไซส์แล้ว ลูกค้าจะเห็นที่หน้าแรก');
@@ -2010,9 +2070,10 @@ async function saveSizeChart(){
 }
 
 async function removeSizeChart(){
-  if (!confirm('ลบรูปตารางไซส์ออกจากหน้าแรก?')) return;
+  if (!confirm('ลบรูปตารางไซส์ทั้งหมดออกจากหน้าแรก?')) return;
   try{
     await db.collection('settings').doc('shop').set({
+      sizeChartImages: firebase.firestore.FieldValue.delete(),
       sizeChartImage: firebase.firestore.FieldValue.delete(),
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     }, {merge:true});
