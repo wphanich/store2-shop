@@ -868,6 +868,13 @@ const STORE1_CONFIG = {
 };
 const store1App = firebase.initializeApp(STORE1_CONFIG, 'store1');
 const store1Db  = store1App.firestore();
+const store1Auth = store1App.auth();
+
+async function ensureStore1Auth(){
+  if (!store1Auth.currentUser){
+    await store1Auth.signInAnonymously();
+  }
+}
 
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
@@ -1164,8 +1171,8 @@ async function saveProfile(){
 /* ============================================================
    5) สินค้า (collection: products) — realtime
    ============================================================ */
-db.collection('products').onSnapshot(snap => {
-  products = snap.docs.map(d => ({id:d.id, ...d.data()}));
+store1Db.collection('products').onSnapshot(snap => {
+  products = snap.docs.map(d => ({id: d.id, ...d.data()}));
   renderCatalog(); renderAdminProducts();
 });
 
@@ -1456,21 +1463,26 @@ async function placeOrder(){
   const total = rows.reduce((s,r)=>s+r.price*r.qty,0);
   const orderNo = 'WH' + Date.now().toString().slice(-8);
   const orderRef = db.collection('orders').doc();
+  const uniquePids = [...new Set(rows.map(r=>r.pid))];
   try{
-    await db.runTransaction(async tx => {
-      // อ่านสต๊อกทุกตัวก่อน แล้วจึงตัดสต๊อก
-      const uniquePids = [...new Set(rows.map(r=>r.pid))];
+    await ensureStore1Auth();
+    // ขั้นที่ 1: ตัดสต๊อกที่ฐานข้อมูลสินค้าส่วนกลาง (WEARHOUSE)
+    await store1Db.runTransaction(async tx => {
       const snaps = {};
       for (const pid of uniquePids){
-        snaps[pid] = await tx.get(db.collection('products').doc(pid));
+        snaps[pid] = await tx.get(store1Db.collection('products').doc(pid));
       }
       for (const pid of uniquePids){
         const need = rows.filter(r=>r.pid===pid).reduce((s,r)=>s+r.qty,0);
         const stock = snaps[pid].data()?.stock || 0;
         if (stock < need) throw new Error('สินค้า "' + snaps[pid].data()?.name + '" มีไม่พอ (เหลือ ' + stock + ')');
-        tx.update(db.collection('products').doc(pid), {stock: stock - need});
+        tx.update(store1Db.collection('products').doc(pid), {stock: stock - need});
       }
-      tx.set(orderRef, {
+    });
+
+    // ขั้นที่ 2: บันทึกคำสั่งซื้อในฐานข้อมูลของร้านนี้
+    try{
+      await orderRef.set({
         uid: currentUser.uid,
         orderNo,
         items: rows.map(r => ({pid:r.pid, name:r.name, size:r.size, color:r.color||'-', gender:r.gender||'-', price:r.price, qty:r.qty})),
@@ -1484,7 +1496,21 @@ async function placeOrder(){
         paymentSlip: null,
         createdAt: firebase.firestore.FieldValue.serverTimestamp()
       });
-    });
+    }catch(orderErr){
+      // คืนสต๊อกกลับ เพราะบันทึกคำสั่งซื้อไม่สำเร็จ
+      try{
+        await store1Db.runTransaction(async tx => {
+          for (const pid of uniquePids){
+            const need = rows.filter(r=>r.pid===pid).reduce((s,r)=>s+r.qty,0);
+            const snap = await tx.get(store1Db.collection('products').doc(pid));
+            const stock = snap.data()?.stock || 0;
+            tx.update(store1Db.collection('products').doc(pid), {stock: stock + need});
+          }
+        });
+      }catch(rollbackErr){ console.error('คืนสต๊อกไม่สำเร็จ', rollbackErr); }
+      throw orderErr;
+    }
+
     cart = []; saveCart();
     closeModal('confirmModal');
     toast('สั่งซื้อสำเร็จ! กรุณาชำระเงินตามขั้นตอนถัดไป');
@@ -2299,6 +2325,21 @@ function renderContactInfo(){
 
 updateBadge();
 renderContactInfo();
+/* ============================================================
+   สินค้าซิงก์มาจาก WEARHOUSE โดยตรงแล้ว — ปิดการเพิ่ม/แก้ไข/ลบสินค้าที่ร้านนี้
+   ============================================================ */
+function openProductForm(id){
+  toast('จัดการสินค้า (เพิ่ม/แก้ไข) ได้ที่ร้าน WEARHOUSE เท่านั้น สินค้าจะซิงก์มาที่ร้านนี้อัตโนมัติ');
+}
+async function saveProduct(){
+  toast('จัดการสินค้าได้ที่ร้าน WEARHOUSE เท่านั้น');
+}
+async function deleteProduct(id){
+  toast('จัดการสินค้าได้ที่ร้าน WEARHOUSE เท่านั้น');
+}
+async function loadStore1Products(){
+  toast('ไม่จำเป็นต้องนำเข้าสินค้าอีกต่อไป — สินค้าซิงก์จาก WEARHOUSE มาที่ร้านนี้อัตโนมัติแล้ว');
+}
 </script>
 </body>
 </html>
